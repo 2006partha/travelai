@@ -18,6 +18,9 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
+        luxury: "relative bg-gradient-to-br from-yellow-500 via-yellow-600 to-yellow-700 text-white font-semibold shadow-luxury-lg hover:shadow-luxury-xl hover:scale-105 hover:from-yellow-600 hover:via-yellow-700 hover:to-yellow-800 transition-all duration-300",
+        "luxury-outline": "border-2 border-yellow-600 dark:border-yellow-500 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-all duration-300",
+        "luxury-gold": "bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-900 font-semibold hover:from-amber-500 hover:to-yellow-600 shadow-luxury-md hover:shadow-luxury-lg transition-all duration-300",
       },
       size: {
         default:

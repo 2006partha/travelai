@@ -22,7 +22,7 @@ export async function getBookingLinksForTrip(destination: string, startDate: str
   }
 
   const model = new ChatGoogleGenerativeAI({
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-2.5-flash",
     apiKey,
     temperature: 0.4,
   });

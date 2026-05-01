@@ -1,11 +1,167 @@
 "use server";
 import nodemailer from "nodemailer";
+import PDFDocument from "pdfkit";
 import { getAuthUser } from "./auth";
 import { prisma } from "@/lib/prisma";
+
+async function generateTripPDF(trip: any): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const chunks: Buffer[] = [];
+
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    // ── Header ──────────────────────────────────────────────────
+    doc.rect(0, 0, doc.page.width, 120).fill("#4f46e5");
+    doc
+      .fillColor("white")
+      .font("Helvetica-Bold")
+      .fontSize(24)
+      .text("TravelAI", 50, 30);
+    doc
+      .fontSize(14)
+      .font("Helvetica")
+      .text("Your Personalized Itinerary", 50, 60);
+    doc
+      .fontSize(20)
+      .font("Helvetica-Bold")
+      .text(trip.title || trip.destination, 50, 85, { width: 500 });
+
+    // ── Trip Meta ────────────────────────────────────────────────
+    doc.fillColor("#1e1b4b").moveDown(3);
+    const metaY = 140;
+    // Box
+    doc.roundedRect(40, metaY, 515, 70, 12).fill("#f0f4ff");
+    doc
+      .fillColor("#4f46e5")
+      .font("Helvetica-Bold")
+      .fontSize(10)
+      .text("DESTINATION", 60, metaY + 12);
+    doc
+      .fillColor("#111827")
+      .font("Helvetica")
+      .fontSize(13)
+      .text(trip.destination, 60, metaY + 26);
+
+    doc
+      .fillColor("#4f46e5")
+      .font("Helvetica-Bold")
+      .fontSize(10)
+      .text("BUDGET", 230, metaY + 12);
+    doc
+      .fillColor("#111827")
+      .font("Helvetica")
+      .fontSize(13)
+      .text(trip.budget, 230, metaY + 26);
+
+    doc
+      .fillColor("#4f46e5")
+      .font("Helvetica-Bold")
+      .fontSize(10)
+      .text("DURATION", 380, metaY + 12);
+    doc
+      .fillColor("#111827")
+      .font("Helvetica")
+      .fontSize(13)
+      .text(`${trip.days?.length || 0} Days`, 380, metaY + 26);
+
+    // Budget Summary
+    if (trip.budgetSummary) {
+      doc.moveDown(5.5).fillColor("#374151").font("Helvetica").fontSize(11).text(trip.budgetSummary, 40, undefined, { width: 515 });
+    }
+
+    doc.moveDown(1.5);
+
+    // ── Days ────────────────────────────────────────────────────
+    for (const day of trip.days || []) {
+      if (doc.y > doc.page.height - 150) doc.addPage();
+
+      // Day Header
+      doc
+        .roundedRect(40, doc.y, 515, 36, 8)
+        .fill("#4f46e5");
+      doc
+        .fillColor("white")
+        .font("Helvetica-Bold")
+        .fontSize(13)
+        .text(
+          `Day ${day.index}${day.theme ? `  ·  ${day.theme}` : ""}`,
+          55,
+          doc.y - 26,
+          { width: 490 }
+        );
+
+      doc.moveDown(0.8);
+
+      // Accommodation & Food
+      if (day.accommodation) {
+        doc.fillColor("#059669").font("Helvetica-Bold").fontSize(10).text("🏨  ACCOMMODATION", 50);
+        doc.fillColor("#374151").font("Helvetica").fontSize(11).text(day.accommodation, 50, undefined, { width: 515 });
+        doc.moveDown(0.4);
+      }
+      if (day.foodSuggestions) {
+        doc.fillColor("#d97706").font("Helvetica-Bold").fontSize(10).text("🍽️  FOOD SPOTS", 50);
+        doc.fillColor("#374151").font("Helvetica").fontSize(11).text(day.foodSuggestions, 50, undefined, { width: 515 });
+        doc.moveDown(0.4);
+      }
+
+      // Activities
+      for (const act of day.activities || []) {
+        if (doc.y > doc.page.height - 100) doc.addPage();
+        doc
+          .roundedRect(50, doc.y, 505, act.description ? 52 : 32, 6)
+          .fill("#f8fafc");
+
+        const actY = doc.y - (act.description ? 52 : 32) + 8;
+        doc.fillColor("#4f46e5").font("Helvetica-Bold").fontSize(10).text(act.time, 62, actY);
+        doc.fillColor("#111827").font("Helvetica-Bold").fontSize(11).text(act.title, 130, actY, { width: 320 });
+        doc.fillColor("#6b7280").font("Helvetica").fontSize(10).text(`$${act.estimatedCost}`, 460, actY);
+
+        if (act.description) {
+          doc.fillColor("#6b7280").font("Helvetica").fontSize(9).text(act.description, 62, actY + 18, { width: 490 });
+        }
+        doc.moveDown(act.description ? 1.5 : 0.9);
+      }
+
+      doc.moveDown(0.5);
+    }
+
+    // ── Packing List ────────────────────────────────────────────
+    if (trip.packingList) {
+      if (doc.y > doc.page.height - 150) doc.addPage();
+      doc.roundedRect(40, doc.y, 515, 28, 8).fill("#f0fdf4");
+      doc.fillColor("#15803d").font("Helvetica-Bold").fontSize(13).text("🎒  PACKING LIST", 55, doc.y - 20);
+      doc.moveDown(0.8);
+      doc.fillColor("#374151").font("Helvetica").fontSize(10).text(trip.packingList, 50, undefined, { width: 515 });
+    }
+
+    // ── Footer ───────────────────────────────────────────────────
+    doc.moveDown(2);
+    doc
+      .fillColor("#9ca3af")
+      .font("Helvetica")
+      .fontSize(9)
+      .text("Generated by TravelAI • Have an amazing journey! ✈️", 50, undefined, { align: "center", width: 495 });
+
+    doc.end();
+  });
+}
 
 export async function emailTripAction(tripId: string) {
   const user = await getAuthUser();
   if (!user) return { success: false, message: "Unauthorized" };
+
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (!smtpUser || !smtpPass) {
+    return {
+      success: false,
+      message: "Email not configured. Add SMTP_USER and SMTP_PASS to your .env file."
+    };
+  }
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
@@ -19,60 +175,62 @@ export async function emailTripAction(tripId: string) {
 
   if (!trip) return { success: false, message: "Trip not found" };
 
-  // For real usage, you need SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env
-  // If not provided, we will use a test account for demonstration.
-  let transporter;
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  } else {
-    // Generate test account if no SMTP provided (this works magically in nodemailer for testing)
-    const testAccount = await nodemailer.createTestAccount();
-    transporter = nodemailer.createTransport({
-      host: "smtp.ethereal.email",
-      port: 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: testAccount.user, // generated ethereal user
-        pass: testAccount.pass, // generated ethereal password
-      },
-    });
-  }
+  // Generate PDF
+  const pdfBuffer = await generateTripPDF(trip);
 
-  let htmlContent = `<h1>Your Trip to ${trip.destination}</h1>`;
-  htmlContent += `<p><strong>Budget:</strong> ${trip.budget}</p>`;
-  htmlContent += `<h2>Itinerary</h2>`;
+  // Build HTML email body
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family:Inter,sans-serif;background:#f1f5f9;margin:0;padding:32px;">
+      <div style="max-width:560px;margin:0 auto;background:white;border-radius:24px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:40px;text-align:center;">
+          <p style="color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:3px;margin:0 0 8px 0;">TravelAI • Your Itinerary</p>
+          <h1 style="color:white;font-size:26px;font-weight:900;margin:0 0 8px 0;">${trip.title || trip.destination}</h1>
+          <p style="color:rgba(255,255,255,0.8);font-size:14px;margin:0;">📍 ${trip.destination}</p>
+        </div>
+        <div style="padding:32px;text-align:center;">
+          <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 24px 0;">
+            Your complete trip plan is attached as a <strong>PDF</strong> below.<br/>
+            Open it anytime — even offline!
+          </p>
+          <div style="background:#f0f4ff;border-radius:16px;padding:20px;margin-bottom:24px;">
+            <p style="color:#4f46e5;font-size:13px;font-weight:700;margin:0 0 4px 0;">📄 Attachment</p>
+            <p style="color:#111827;font-size:14px;font-weight:600;margin:0;">${trip.destination.replace(/[^a-z0-9]/gi, "_")}_itinerary.pdf</p>
+          </div>
+          <p style="color:#9ca3af;font-size:12px;margin:0;">Have an amazing journey! ✈️</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
 
-  trip.days.forEach((day: any) => {
-    htmlContent += `<h3>Day ${day.index} - ${new Date(day.date).toDateString()}</h3><ul>`;
-    day.activities.forEach((act: any) => {
-      htmlContent += `<li><strong>${act.time}</strong>: ${act.title} ($${act.estimatedCost})<br/><i>${act.description || ''}</i></li>`;
-    });
-    htmlContent += `</ul>`;
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: smtpUser, pass: smtpPass },
   });
 
   try {
-    const info = await transporter.sendMail({
-      from: '"TravelAI" <noreply@travelai.com>',
+    await transporter.sendMail({
+      from: `"TravelAI ✈️" <${smtpUser}>`,
       to: user.email,
-      subject: `Your TravelAI Itinerary: ${trip.title}`,
-      html: htmlContent,
+      subject: `Your Itinerary PDF: ${trip.title || trip.destination} 🗺️`,
+      html,
+      attachments: [
+        {
+          filename: `${trip.destination.replace(/[^a-z0-9]/gi, "_")}_itinerary.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
     });
-    
-    console.log("Message sent: %s", info.messageId);
-    if (!process.env.SMTP_USER) {
-      console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
+
+    return { success: true, message: `Itinerary PDF sent to ${user.email}!` };
+  } catch (error: any) {
+    console.error("Email error:", error);
+    if (error.message?.includes("Invalid login")) {
+      return { success: false, message: "Gmail auth failed. Please use an App Password in .env (SMTP_PASS)." };
     }
-    return { success: true, message: "Email sent successfully!" };
-  } catch (error) {
-    console.error("Error sending email", error);
-    return { success: false, message: "Failed to send email." };
+    return { success: false, message: "Failed to send: " + error.message };
   }
 }

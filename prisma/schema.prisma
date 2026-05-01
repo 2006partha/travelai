@@ -8,37 +8,89 @@ generator client {
 }
 
 model User {
-  id                 String   @id @default(uuid())
-  email              String   @unique
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  emailVerified      DateTime?
+  password           String?   // Optional for social login users
+  image              String?
   name               String?
+  phone              String?
+  age                Int?
+  bio                String?
   preferredBudget    String?
   preferredInterests String[]
-  trips              Trip[]   @relation("UserTrips")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  trips              Trip[]    @relation("UserTrips")
+  accounts           Account[]
+  sessions           Session[]
 }
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
 
 model Trip {
-  id          String   @id @default(uuid())
-  title       String
-  destination String
-  budget      String
-  startDate   DateTime
-  endDate     DateTime
-  interests   String[]
-  users       User[]   @relation("UserTrips")
-  days        Day[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String     @id @default(uuid())
+  title          String
+  destination    String
+  budget         String
+  numberOfPeople Int        @default(1)
+  startDate      DateTime
+  endDate        DateTime
+  interests      String[]
+  packingList    String?
+  status         String     @default("UPCOMING") // UPCOMING, COMPLETED, CANCELLED
+  notes          String?    // Personal journal/issues
+  users          User[]     @relation("UserTrips")
+  days           Day[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 }
 
+
+
 model Day {
-  id         String     @id @default(uuid())
-  date       DateTime
-  tripId     String
-  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  activities Activity[]
-  index      Int
+  id              String     @id @default(uuid())
+  date            DateTime
+  tripId          String
+  trip            Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  activities      Activity[]
+  accommodation   String?    // Stay recommendation
+  foodSuggestions String?    // Local food spots
+  index           Int
 }
 
 model Activity {
@@ -47,6 +99,11 @@ model Activity {
   title         String
   description   String?
   estimatedCost Float
+  lat           Float?
+  lng           Float?
+  rating        Float?
+  category      String? // e.g., "Adventure", "Culture", "Relax"
   dayId         String
   day           Day     @relation(fields: [dayId], references: [id], onDelete: Cascade)
 }
+
