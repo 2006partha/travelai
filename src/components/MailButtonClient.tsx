@@ -17,10 +17,12 @@ export function MailButtonClient({ tripId }: { tripId: string }) {
         setStatus("error");
         setMessage(res.message);
       }
-    } catch (e) {
+    } catch (e: any) {
+      console.error("Client Action Error:", e);
       setStatus("error");
-      setMessage("Failed to send email");
+      setMessage(e.message || "An unexpected error occurred");
     }
+
   }
 
   if (status === "success") {

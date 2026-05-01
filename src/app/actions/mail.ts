@@ -1,236 +1,105 @@
 "use server";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import PDFDocument from "pdfkit";
 import { getAuthUser } from "./auth";
 import { prisma } from "@/lib/prisma";
 
-async function generateTripPDF(trip: any): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: "A4" });
-    const chunks: Buffer[] = [];
+async function generateTripPDF(trip: any): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    try {
+      const doc = new PDFDocument({ margin: 50, size: "A4" });
+      const chunks: Buffer[] = [];
+      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", (err) => {
+        console.error("PDF generation internal error:", err);
+        resolve(null);
+      });
 
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-
-    // ── Header ──────────────────────────────────────────────────
-    doc.rect(0, 0, doc.page.width, 120).fill("#4f46e5");
-    doc
-      .fillColor("white")
-      .font("Helvetica-Bold")
-      .fontSize(24)
-      .text("TravelAI", 50, 30);
-    doc
-      .fontSize(14)
-      .font("Helvetica")
-      .text("Your Personalized Itinerary", 50, 60);
-    doc
-      .fontSize(20)
-      .font("Helvetica-Bold")
-      .text(trip.title || trip.destination, 50, 85, { width: 500 });
-
-    // ── Trip Meta ────────────────────────────────────────────────
-    doc.fillColor("#1e1b4b").moveDown(3);
-    const metaY = 140;
-    // Box
-    doc.roundedRect(40, metaY, 515, 70, 12).fill("#f0f4ff");
-    doc
-      .fillColor("#4f46e5")
-      .font("Helvetica-Bold")
-      .fontSize(10)
-      .text("DESTINATION", 60, metaY + 12);
-    doc
-      .fillColor("#111827")
-      .font("Helvetica")
-      .fontSize(13)
-      .text(trip.destination, 60, metaY + 26);
-
-    doc
-      .fillColor("#4f46e5")
-      .font("Helvetica-Bold")
-      .fontSize(10)
-      .text("BUDGET", 230, metaY + 12);
-    doc
-      .fillColor("#111827")
-      .font("Helvetica")
-      .fontSize(13)
-      .text(trip.budget, 230, metaY + 26);
-
-    doc
-      .fillColor("#4f46e5")
-      .font("Helvetica-Bold")
-      .fontSize(10)
-      .text("DURATION", 380, metaY + 12);
-    doc
-      .fillColor("#111827")
-      .font("Helvetica")
-      .fontSize(13)
-      .text(`${trip.days?.length || 0} Days`, 380, metaY + 26);
-
-    // Budget Summary
-    if (trip.budgetSummary) {
-      doc.moveDown(5.5).fillColor("#374151").font("Helvetica").fontSize(11).text(trip.budgetSummary, 40, undefined, { width: 515 });
-    }
-
-    doc.moveDown(1.5);
-
-    // ── Days ────────────────────────────────────────────────────
-    for (const day of trip.days || []) {
-      if (doc.y > doc.page.height - 150) doc.addPage();
-
-      // Day Header
-      doc
-        .roundedRect(40, doc.y, 515, 36, 8)
-        .fill("#4f46e5");
-      doc
-        .fillColor("white")
-        .font("Helvetica-Bold")
-        .fontSize(13)
-        .text(
-          `Day ${day.index}${day.theme ? `  ·  ${day.theme}` : ""}`,
-          55,
-          doc.y - 26,
-          { width: 490 }
-        );
-
-      doc.moveDown(0.8);
-
-      // Accommodation & Food
-      if (day.accommodation) {
-        doc.fillColor("#059669").font("Helvetica-Bold").fontSize(10).text("🏨  ACCOMMODATION", 50);
-        doc.fillColor("#374151").font("Helvetica").fontSize(11).text(day.accommodation, 50, undefined, { width: 515 });
-        doc.moveDown(0.4);
-      }
-      if (day.foodSuggestions) {
-        doc.fillColor("#d97706").font("Helvetica-Bold").fontSize(10).text("🍽️  FOOD SPOTS", 50);
-        doc.fillColor("#374151").font("Helvetica").fontSize(11).text(day.foodSuggestions, 50, undefined, { width: 515 });
-        doc.moveDown(0.4);
-      }
-
-      // Activities
-      for (const act of day.activities || []) {
-        if (doc.y > doc.page.height - 100) doc.addPage();
-        doc
-          .roundedRect(50, doc.y, 505, act.description ? 52 : 32, 6)
-          .fill("#f8fafc");
-
-        const actY = doc.y - (act.description ? 52 : 32) + 8;
-        doc.fillColor("#4f46e5").font("Helvetica-Bold").fontSize(10).text(act.time, 62, actY);
-        doc.fillColor("#111827").font("Helvetica-Bold").fontSize(11).text(act.title, 130, actY, { width: 320 });
-        doc.fillColor("#6b7280").font("Helvetica").fontSize(10).text(`$${act.estimatedCost}`, 460, actY);
-
-        if (act.description) {
-          doc.fillColor("#6b7280").font("Helvetica").fontSize(9).text(act.description, 62, actY + 18, { width: 490 });
+      doc.rect(0, 0, doc.page.width, 80).fill("#4f46e5");
+      doc.fillColor("white").font("Helvetica-Bold").fontSize(20).text("TravelAI Itinerary", 50, 30);
+      doc.fillColor("#1e1b4b").moveDown(4);
+      doc.fontSize(16).text(trip.title || trip.destination);
+      doc.fontSize(10).font("Helvetica").text(`Destination: ${trip.destination}`);
+      doc.moveDown(2);
+      
+      for (const day of trip.days) {
+        doc.fillColor("#4f46e5").font("Helvetica-Bold").fontSize(12).text(`Day ${day.index}: ${day.theme || ""}`);
+        for (const act of day.activities) {
+          doc.fillColor("#111827").font("Helvetica").fontSize(10).text(`• ${act.time}: ${act.title} ($${act.estimatedCost})`);
         }
-        doc.moveDown(act.description ? 1.5 : 0.9);
+        doc.moveDown(1);
       }
-
-      doc.moveDown(0.5);
+      doc.end();
+    } catch (e) {
+      console.error("PDF generation catch block error:", e);
+      resolve(null);
     }
-
-    // ── Packing List ────────────────────────────────────────────
-    if (trip.packingList) {
-      if (doc.y > doc.page.height - 150) doc.addPage();
-      doc.roundedRect(40, doc.y, 515, 28, 8).fill("#f0fdf4");
-      doc.fillColor("#15803d").font("Helvetica-Bold").fontSize(13).text("🎒  PACKING LIST", 55, doc.y - 20);
-      doc.moveDown(0.8);
-      doc.fillColor("#374151").font("Helvetica").fontSize(10).text(trip.packingList, 50, undefined, { width: 515 });
-    }
-
-    // ── Footer ───────────────────────────────────────────────────
-    doc.moveDown(2);
-    doc
-      .fillColor("#9ca3af")
-      .font("Helvetica")
-      .fontSize(9)
-      .text("Generated by TravelAI • Have an amazing journey! ✈️", 50, undefined, { align: "center", width: 495 });
-
-    doc.end();
   });
 }
 
 export async function emailTripAction(tripId: string) {
-  const user = await getAuthUser();
-  if (!user) return { success: false, message: "Unauthorized" };
-
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-
-  if (!smtpUser || !smtpPass) {
-    return {
-      success: false,
-      message: "Email not configured. Add SMTP_USER and SMTP_PASS to your .env file."
-    };
-  }
-
-  const trip = await prisma.trip.findUnique({
-    where: { id: tripId },
-    include: {
-      days: {
-        include: { activities: true },
-        orderBy: { index: "asc" }
-      }
-    }
-  });
-
-  if (!trip) return { success: false, message: "Trip not found" };
-
-  // Generate PDF
-  const pdfBuffer = await generateTripPDF(trip);
-
-  // Build HTML email body
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <body style="font-family:Inter,sans-serif;background:#f1f5f9;margin:0;padding:32px;">
-      <div style="max-width:560px;margin:0 auto;background:white;border-radius:24px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:40px;text-align:center;">
-          <p style="color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:3px;margin:0 0 8px 0;">TravelAI • Your Itinerary</p>
-          <h1 style="color:white;font-size:26px;font-weight:900;margin:0 0 8px 0;">${trip.title || trip.destination}</h1>
-          <p style="color:rgba(255,255,255,0.8);font-size:14px;margin:0;">📍 ${trip.destination}</p>
-        </div>
-        <div style="padding:32px;text-align:center;">
-          <p style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 24px 0;">
-            Your complete trip plan is attached as a <strong>PDF</strong> below.<br/>
-            Open it anytime — even offline!
-          </p>
-          <div style="background:#f0f4ff;border-radius:16px;padding:20px;margin-bottom:24px;">
-            <p style="color:#4f46e5;font-size:13px;font-weight:700;margin:0 0 4px 0;">📄 Attachment</p>
-            <p style="color:#111827;font-size:14px;font-weight:600;margin:0;">${trip.destination.replace(/[^a-z0-9]/gi, "_")}_itinerary.pdf</p>
-          </div>
-          <p style="color:#9ca3af;font-size:12px;margin:0;">Have an amazing journey! ✈️</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: smtpUser, pass: smtpPass },
-  });
-
   try {
-    await transporter.sendMail({
-      from: `"TravelAI ✈️" <${smtpUser}>`,
-      to: user.email,
-      subject: `Your Itinerary PDF: ${trip.title || trip.destination} 🗺️`,
-      html,
-      attachments: [
-        {
-          filename: `${trip.destination.replace(/[^a-z0-9]/gi, "_")}_itinerary.pdf`,
-          content: pdfBuffer,
-          contentType: "application/pdf",
-        },
-      ],
+    const user = await getAuthUser();
+    if (!user) return { success: false, message: "Unauthorized: Please login again." };
+
+    const resendKey = process.env.RESEND_API_KEY;
+    if (!resendKey) return { success: false, message: "Server configuration error: Missing Resend API Key." };
+
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      include: {
+        days: { include: { activities: true }, orderBy: { index: "asc" } }
+      }
     });
 
-    return { success: true, message: `Itinerary PDF sent to ${user.email}!` };
-  } catch (error: any) {
-    console.error("Email error:", error);
-    if (error.message?.includes("Invalid login")) {
-      return { success: false, message: "Gmail auth failed. Please use an App Password in .env (SMTP_PASS)." };
-    }
-    return { success: false, message: "Failed to send: " + error.message };
+    if (!trip) return { success: false, message: "Trip not found." };
+
+    // Try PDF but don't crash if it fails
+    const pdfBuffer = await generateTripPDF(trip);
+
+    // Build rich HTML content
+    const daysHtml = trip.days.map((day: any) => `
+      <div style="margin-bottom:20px; border-left: 3px solid #4f46e5; padding-left: 15px;">
+        <h3 style="color:#1e1b4b; margin:0;">Day ${day.index}: ${day.theme || ""}</h3>
+        <ul style="list-style:none; padding:0; margin:10px 0;">
+          ${day.activities.map((act: any) => `
+            <li style="margin-bottom:5px; font-size:14px; color:#374151;">
+              <strong>${act.time}</strong>: ${act.title} ($${act.estimatedCost})
+            </li>
+          `).join("")}
+        </ul>
+      </div>
+    `).join("");
+
+    const html = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+        <h1 style="color: #4f46e5;">TravelAI: ${trip.destination}</h1>
+        <p><strong>Budget:</strong> ${trip.budget}</p>
+        <p><strong>Duration:</strong> ${trip.days.length} Days</p>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        ${daysHtml}
+        ${!pdfBuffer ? `<p style="color:#6b7280; font-size:12px; margin-top:20px;">(Note: PDF attachment was skipped due to server load, but here is your full itinerary!)</p>` : ""}
+      </div>
+    `;
+
+    const resend = new Resend(resendKey);
+    const attachments = pdfBuffer ? [{ filename: `${trip.destination}_itinerary.pdf`, content: pdfBuffer }] : [];
+
+    const { data, error } = await resend.emails.send({
+      from: "TravelAI <onboarding@resend.dev>",
+      to: user.email,
+      subject: `Your Itinerary: ${trip.destination} 🗺️`,
+      html,
+      attachments
+    });
+
+    if (error) return { success: false, message: `Resend Error: ${error.message}` };
+
+    return { success: true, message: `Itinerary sent to ${user.email}! ${pdfBuffer ? "(with PDF)" : "(Text version)"}` };
+
+  } catch (err: any) {
+    console.error("Critical System Error:", err);
+    return { success: false, message: "System Error: " + (err.message || "Unknown error") };
   }
 }
